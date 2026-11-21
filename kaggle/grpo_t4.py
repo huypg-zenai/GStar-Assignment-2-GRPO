@@ -204,14 +204,22 @@ def merged_weights(policy, dtype):
             yield name.replace("base_model.model.", "", 1) + ".weight", w.to(dtype)
 
 
+def on_vllm_gpu(llm):
+    """Run vLLM calls with vLLM's GPU as the *current* CUDA device. Its Triton kernels (e.g. prefix-prefill
+    attention) launch on the current device, so with the policy on cuda:0 and vLLM on cuda:1 they would fail with
+    'Pointer argument cannot be accessed from Triton' unless the current device is switched around every call."""
+    return torch.cuda.device(llm._gen_device)
+
+
 @torch.no_grad()
 def sync_policy_to_vllm(policy, llm, dtype):
-    vllm_model(llm).load_weights(merged_weights(policy, dtype))
-    # Prefix caching would otherwise reuse prompt KV blocks computed with the previous weights (stale, off-policy).
-    try:
-        llm.reset_prefix_cache()
-    except Exception as e:  # noqa: BLE001
-        log(f"reset_prefix_cache failed: {e}")
+    with on_vllm_gpu(llm):
+        vllm_model(llm).load_weights(merged_weights(policy, dtype))
+        # Prefix caching would otherwise reuse prompt KV blocks computed with the previous weights (stale, off-policy).
+        try:
+            llm.reset_prefix_cache()
+        except Exception as e:  # noqa: BLE001
+            log(f"reset_prefix_cache failed: {e}")
 
 
 def response_log_probs(policy, input_ids, labels):
@@ -238,7 +246,8 @@ def run_train(a):
     n_train = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     log(f"policy ready: {n_train / 1e6:.1f}M trainable LoRA params")
     llm = init_vllm(gen_dev, dtype, a.vllm_mem if gen_dev != train_dev else 0.35, a.seed)
-    torch.cuda.set_device(0)  # vLLM's worker init calls set_device(cuda:1)
+    llm._gen_device = torch.device(gen_dev)
+    torch.cuda.set_device(0)  # vLLM's worker init calls set_device(cuda:1); training uses cuda:0, vLLM calls switch back
     sp = S.init_sampling_params(temperature=a.temperature, min_tokens=a.min_tokens, max_tokens=a.max_tokens)
 
     train_rows = load_countdown("train")
@@ -265,7 +274,8 @@ def run_train(a):
     def do_eval(step):
         t0 = time.time()
         sync_policy_to_vllm(policy, llm, dtype)
-        m = S.evaluate_model(llm, sp, eval_prompts, eval_answers)
+        with on_vllm_gpu(llm):
+            m = S.evaluate_model(llm, sp, eval_prompts, eval_answers)
         for k in ["accuracy", "mean_reward", "std_reward", "avg_output_tokens", "count_correct",
                   "count_partial", "count_failed"]:
             writer.add_scalar(f"eval/{k}", m[k], global_step=step)
@@ -297,7 +307,8 @@ def run_train(a):
         sync_policy_to_vllm(policy, llm, dtype)
         t_sync = time.time() - t0
         t0 = time.time()
-        outs = llm.generate(S.duplicate_data(prompts, a.group_size), sp, use_tqdm=False)
+        with on_vllm_gpu(llm):
+            outs = llm.generate(S.duplicate_data(prompts, a.group_size), sp, use_tqdm=False)
         resp_in = [o.prompt for o in outs for _ in o.outputs]
         resp = [r.text for o in outs for r in o.outputs]
         n_tok = [len(r.token_ids) for o in outs for r in o.outputs]
