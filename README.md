@@ -28,3 +28,18 @@ Main File: `starter.py`:
 #### Part 2: Main Experiments and Report (please refer to section 1.6 of [gstar_assignment2.pdf](./gstar_assignment2.pdf) for the Main Report and Experiments
 
 ### Problem 2: (Optional) Open-ended Investigation. Please refer to Section 2 of [gstar_assignment2.pdf](./gstar_assignment2.pdf)
+
+## Running Problem 1 on Kaggle (2× T4)
+
+`starter.py` holds the Problem-1 implementations (Tasks 1–5); `tests/test_tasks.py` checks them on CPU
+(`python -m pytest -q tests/test_tasks.py`).
+
+`kaggle/problem1_kaggle.ipynb` clones this repo and runs `kaggle/grpo_t4.py`, which uses those implementations
+unchanged. A T4 can't hold the starter's single-A100 setup, so the runtime differs:
+- vLLM rollouts run on GPU 1 in fp16;
+- the policy (Qwen3-1.7B with LoRA adapters on a frozen fp16 base) trains on GPU 0;
+- the merged weights are pushed into vLLM before each rollout and each eval.
+
+The other hyperparameters follow `starter.main()`. Run the notebook once with `RUN = "L256"` (which also runs
+zero-shot at L256/L512/L1024) and once with `RUN = "L512"`. Then build the combined table and plots:
+`python kaggle/report.py outputs_L256/ outputs_L512/ --save report/`.

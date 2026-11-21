@@ -3,3 +3,8 @@ venv/
 base.py
 base_long.py
 .DS_Store
+output/
+outputs*/
+__pycache__/
+.pytest_cache/
+wandb/

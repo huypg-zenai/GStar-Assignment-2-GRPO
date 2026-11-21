@@ -1,0 +1,11 @@
+# Pinned for Kaggle 2x T4 (also works on A100). vLLM 0.8.5 is the first line with Qwen3 that still has the V0 engine
+# used by starter.py (VLLM_USE_V1=0, llm_engine.model_executor.driver_worker...). It pins torch 2.6.0.
+vllm==0.8.5.post1
+transformers==4.51.3
+peft==0.15.2
+datasets
+tensorboard
+python-dotenv
+pytest
+matplotlib
+wandb

@@ -135,7 +135,10 @@ def _extract_answer(solution_str: str) -> str | None:
         The stripped string content of the last answer tag, or None if no tag is found.
     """
     ### YOUR CODE HERE ###
-    pass
+    matches = list(re.finditer(r"<answer>(.*?)</answer>", solution_str, flags=re.DOTALL))
+    if not matches:
+        return None
+    return matches[-1].group(1).strip()
     ### END YOUR CODE ###
 
 
@@ -155,7 +158,22 @@ def _validate_numbers(equation_str: str, available_numbers: List[int]) -> bool:
         True if the equation uses the correct numbers, False otherwise.
     """
     ### YOUR CODE HERE ###
-    pass
+    # Section 1.2: the numbers in the equation must be a sub-multiset of the available numbers
+    # (each available number used at most once).
+    try:
+        used = [int(n) for n in re.findall(r"\d+", equation_str)]
+        if not used:
+            return False
+        remaining = {}
+        for n in available_numbers:
+            remaining[int(n)] = remaining.get(int(n), 0) + 1
+        for n in used:
+            if remaining.get(n, 0) <= 0:
+                return False
+            remaining[n] -= 1
+        return True
+    except Exception:
+        return False
     ### END YOUR CODE ###
 
 
@@ -168,7 +186,17 @@ def _evaluate_equation(equation_str: str) -> float | None:
         The result of the equation as a float, or None if it's invalid or unsafe.
     """
     ### YOUR CODE HERE ###
-    pass
+    # Only digits, whitespace, + - * / and parentheses; no '**' (power) or '//' (floor division).
+    if equation_str is None or not re.fullmatch(r"[\d+\-*/()\s]+", equation_str):
+        return None
+    if "**" in equation_str or "//" in equation_str:
+        return None
+    try:
+        # Implicit multiplication such as "2(3+4)" raises TypeError; division by zero raises ZeroDivisionError.
+        result = eval(equation_str, {"__builtins__": None}, {})
+        return float(result)
+    except Exception:
+        return None
     ### END YOUR CODE ###
 
 # ==============================================================================
@@ -189,7 +217,15 @@ def reward_fn(generated_text: str, ground_truth: Dict) -> float:
         A float value representing the reward, such as 1.0, 0.1, or 0.0
     """
     ### YOUR CODE HERE ###
-    pass
+    equation = _extract_answer(generated_text)
+    if equation is None:
+        return 0.0
+    if not _validate_numbers(equation, ground_truth["numbers"]):
+        return 0.1
+    result = _evaluate_equation(equation)
+    if result is None:
+        return 0.1
+    return 1.0 if abs(result - float(ground_truth["target"])) < 1e-5 else 0.1
     ### END YOUR CODE ###
 
 
@@ -318,7 +354,23 @@ def compute_group_normalized_advantages(
     # 7. Create a `metadata` dictionary with overall statistics of the raw rewards.
     advantages, raw_rewards, metadata = None, None, {}
     ### YOUR CODE HERE ###
-    pass
+    raw_rewards = torch.tensor(
+        [float(reward_fn(resp, gt)) for resp, gt in zip(rollout_responses, repeated_ground_truths)],
+        dtype=torch.float32,
+    )
+    grouped = raw_rewards.view(-1, group_size)
+    group_mean = grouped.mean(dim=1, keepdim=True)
+    centered = grouped - group_mean
+    if normalize_by_std:
+        group_std = grouped.std(dim=1, keepdim=True)
+        centered = centered / (group_std + advantage_eps)
+    advantages = centered.reshape(-1)
+    metadata = {
+        "mean": torch.mean(raw_rewards),
+        "std": torch.std(raw_rewards),
+        "max": torch.max(raw_rewards),
+        "min": torch.min(raw_rewards),
+    }
     ### END YOUR CODE ###
     return advantages, raw_rewards, metadata
 
@@ -349,9 +401,13 @@ def compute_loss(
     """
     loss = 0.0
     ### YOUR CODE HERE ###
-    pass
+    pi_ratio = torch.exp(policy_log_probs - old_log_probs)
+    unclipped = advantages * pi_ratio
+    clipped = advantages * torch.clamp(pi_ratio, 1.0 - clip_range, 1.0 + clip_range)
+    loss = -torch.minimum(unclipped, clipped)
+    metadata = {"clip_fraction": (clipped < unclipped).float().mean().detach()}
     ### END YOUR CODE ###
-    return loss
+    return loss, metadata
 
 
 def masked_mean(tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -359,7 +415,9 @@ def masked_mean(tensor: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     Compute the mean of tensor values where mask=True for each row, then average across the batch.
     """
     ### YOUR CODE HERE ###
-    pass
+    mask = mask.to(tensor.dtype)
+    per_seq = (tensor * mask).sum(dim=-1) / mask.sum(dim=-1).clamp(min=1.0)
+    return per_seq.mean()
     ### END YOUR CODE ###
 
 def masked_mean_drgrpo(tensor: torch.Tensor, mask: torch.Tensor, num_tokens: int) -> torch.Tensor:
@@ -368,7 +426,9 @@ def masked_mean_drgrpo(tensor: torch.Tensor, mask: torch.Tensor, num_tokens: int
     This is used for the DR-GRPO loss
     """
     ### YOUR CODE HERE ###
-    pass
+    mask = mask.to(tensor.dtype)
+    per_seq = (tensor * mask).sum(dim=-1) / float(num_tokens)
+    return per_seq.mean()
     ### END YOUR CODE ###
 
 def get_response_log_probs(model: PreTrainedModel, input_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
