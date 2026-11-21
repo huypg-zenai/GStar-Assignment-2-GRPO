@@ -10,7 +10,9 @@ import glob
 import json
 import os
 
-import matplotlib
+# The Jupyter kernel exports MPLBACKEND=module://matplotlib_inline..., which a plain subprocess (the py3.12 venv) can't load.
+os.environ["MPLBACKEND"] = "Agg"
+import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
