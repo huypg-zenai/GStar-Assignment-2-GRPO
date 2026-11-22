@@ -1,7 +1,9 @@
 """Problem 2: GRPO on Leduc Hold'em decisions with Qwen3-1.7B (Kaggle 2x T4).
 
-Each prompt is one decision point (an information set) of Leduc Hold'em, described in words. The model reasons in
-<think> and answers with an action in <answer>. Rewards come from the exact CFR+ equilibrium (problem2/leduc.py):
+Each prompt is one decision point (an information set) of Leduc Hold'em, described in words. The model reasons
+briefly in plain text and answers with an action in <answer>. Qwen3's built-in thinking mode is OFF by default
+(enable_thinking=False): in a pilot it never finished within 512 tokens (0% valid answers -> zero GRPO signal);
+--thinking turns it back on for ablations. Rewards come from the exact CFR+ equilibrium (problem2/leduc.py):
 
   --reward ev       0.1 + 0.9 * normalized equilibrium action value Q*(I, a)   (exact, noiseless)
   --reward outcome  0.1 + 0.9 * normalized chips from ONE simulated hand          (noisy, "play it out" reward)
@@ -13,7 +15,7 @@ always-raise bots, plus decision-level metrics (normalized EV, regret in chips) 
 The GPU plumbing (vLLM on GPU 1, LoRA policy on GPU 0, weight sync, fp16 GradScaler) and the GRPO math
 (starter.compute_group_normalized_advantages / compute_loss / masked_mean) are reused from Problem 1 unchanged.
 
-  python problem2/grpo_leduc.py zeroshot --lengths 512 1024 --out OUT
+  python problem2/grpo_leduc.py zeroshot --lengths 512 --out OUT
   python problem2/grpo_leduc.py train --reward ev --out OUT [--time_budget_min 600]
   python problem2/grpo_leduc.py train --reward ev --smoke --out OUT
 """
@@ -37,10 +39,13 @@ from grpo_t4 import (MODEL_ID, WB, init_policy, init_vllm, log, on_vllm_gpu, pic
                      response_log_probs, sync_policy_to_vllm)
 
 
+THINKING = False   # set from --thinking in main()
+
+
 def build_prompts(keys, tok):
     return [tok.apply_chat_template(
         [dict(role="system", content="You are a helpful assistant."), dict(role="user", content=L.user_prompt(k))],
-        add_generation_prompt=True, tokenize=False) for k in keys]
+        add_generation_prompt=True, tokenize=False, enable_thinking=THINKING) for k in keys]
 
 
 def evaluate(llm, sp, tok, eq, k, max_tokens, keys=None):
@@ -188,7 +193,12 @@ def run_train(a):
         eval_secs[0] = time.time() - t0
         return m
 
-    do_eval(0, a.eval_k)
+    m0 = do_eval(0, a.eval_k)
+    if m0["valid_rate"] < a.min_valid and not a.smoke:
+        wb.finish({})
+        raise SystemExit(f"ABORT: step-0 valid-answer rate {m0['valid_rate']:.1%} < {a.min_valid:.0%} "
+                         f"(truncated {m0['frac_truncated']:.0%}). Nearly every reward would be 0, so GRPO gets no "
+                         f"signal. Shorten the reasoning (prompt / --thinking off) or raise --max_tokens.")
     step_times, step = [], 0
     for step in range(1, a.n_steps + 1):
         elapsed = time.time() - t_start
@@ -295,7 +305,7 @@ def main():
     p.add_argument("--reward", default="ev", choices=["ev", "outcome"])
     p.add_argument("--dtype", default="auto", choices=["auto", "fp16", "bf16"])
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--lengths", type=int, nargs="+", default=[512, 1024])
+    p.add_argument("--lengths", type=int, nargs="+", default=[512])
     p.add_argument("--eval_k", type=int, default=2, help="samples per info set in periodic evals")
     p.add_argument("--final_k", type=int, default=8, help="samples per info set in the final / zero-shot eval")
     p.add_argument("--eval_keys", type=int, default=0, help="limit evals to the first N info sets (0 = all 288)")
@@ -325,7 +335,11 @@ def main():
     p.add_argument("--wandb_group", default="")
     p.add_argument("--wandb_mode", default="online", choices=["online", "offline", "disabled"])
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--min_valid", type=float, default=0.05, help="abort if the step-0 valid rate is below this")
+    p.add_argument("--thinking", action="store_true", help="use Qwen3's built-in thinking mode (off by default)")
     a = p.parse_args()
+    global THINKING
+    THINKING = a.thinking
     if a.smoke:
         a.n_steps, a.rollout_batch_size, a.group_size, a.grad_acc = 3, 16, 4, 4
         a.eval_k, a.final_k, a.eval_keys, a.eval_every, a.save_every = 1, 1, a.eval_keys or 48, 2, 0

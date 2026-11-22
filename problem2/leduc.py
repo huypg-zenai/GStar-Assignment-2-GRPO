@@ -372,7 +372,7 @@ TEMPLATE = """{rules}
 Current situation:
 {state}
 
-Choose the action that maximizes your expected chips. Think about your hand strength and what your opponent may hold. Show your reasoning in <think> </think> tags and give only the action in <answer> </answer> tags, for example <answer>{example}</answer>."""
+Choose the action that maximizes your expected chips. Think briefly (a few sentences) about your hand strength and what your opponent may hold, then give only the action in <answer> </answer> tags, for example <answer>{example}</answer>."""
 
 
 def user_prompt(key):
