@@ -1,0 +1,69 @@
+{
+ "zero-shot": {
+  "claim_correct": 1377,
+  "right_reason_best_action": 934,
+  "right_reason_notbest_action": 443,
+  "claim_wrong": 409,
+  "wrong_reason_notbest_action": 151,
+  "no_claim": 278,
+  "wrong_reason_best_action": 258,
+  "n_round2": 2064,
+  "claim_accuracy": 0.770996640537514,
+  "invented_terms": 139,
+  "n_all": 2304,
+  "by_hand": {
+   "pair": {
+    "strong": 566,
+    "weak": 10
+   },
+   "unpaired favourite": {
+    "strong": 402,
+    "weak": 209
+   }
+  }
+ },
+ "GRPO ev": {
+  "claim_correct": 1359,
+  "right_reason_best_action": 1136,
+  "no_claim": 103,
+  "right_reason_notbest_action": 223,
+  "claim_wrong": 696,
+  "wrong_reason_best_action": 579,
+  "wrong_reason_notbest_action": 117,
+  "n_round2": 2158,
+  "claim_accuracy": 0.6613138686131387,
+  "invented_terms": 23,
+  "n_all": 2304,
+  "by_hand": {
+   "pair": {
+    "strong": 655
+   },
+   "unpaired favourite": {
+    "weak": 694,
+    "strong": 1
+   }
+  }
+ },
+ "GRPO outcome": {
+  "no_claim": 250,
+  "claim_correct": 1238,
+  "right_reason_best_action": 1063,
+  "right_reason_notbest_action": 175,
+  "claim_wrong": 670,
+  "wrong_reason_notbest_action": 210,
+  "wrong_reason_best_action": 460,
+  "n_round2": 2158,
+  "claim_accuracy": 0.6488469601677149,
+  "invented_terms": 7,
+  "n_all": 2304,
+  "by_hand": {
+   "pair": {
+    "strong": 541
+   },
+   "unpaired favourite": {
+    "weak": 669,
+    "strong": 3
+   }
+  }
+ }
+}

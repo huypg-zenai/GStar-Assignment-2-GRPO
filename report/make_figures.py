@@ -31,7 +31,7 @@ def fig_accuracy():
     series = [("Zero-shot", GRAY, lambda L: acc(f"zero-shot {L}")),
               ("GRPO", BLUE, lambda L: acc(f"GRPO {L}") if L != "L1024" else None),
               ("Dr.GRPO", ORANGE, lambda L: acc(f"Dr.GRPO {L}") if L != "L1024" else None)]
-    fig, ax = plt.subplots(figsize=(6.2, 2.9))
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))
     w = 0.26
     for j, (lab, col, f) in enumerate(series):
         for i, L in enumerate(groups):
@@ -40,14 +40,14 @@ def fig_accuracy():
                 continue
             x = i + (j - 1) * w
             ax.bar(x, v, w - 0.03, color=col, label=lab if i == 0 else None, zorder=3)
-            ax.text(x, v + 1.2, f"{v:.1f}", ha="center", va="bottom", fontsize=8, color=INK)
+            ax.text(x, v + 1.2, f"{v:.1f}", ha="center", va="bottom", fontsize=7, color=INK)
     ax.axhline(37, ls="--", lw=1, color=INK2, zorder=2)
-    ax.text(2.42, 38.2, "course zero-shot\nL1024 ≈ 37%", fontsize=7.5, color=INK2, ha="right", va="bottom")
-    ax.set_xticks(range(3), [f"max {g[1:]} tokens" for g in groups])
-    ax.set_ylabel("accuracy on 1,024 test prompts (%)")
+    ax.text(2.45, 38.2, "course zero-shot\nL1024 ≈ 37%", fontsize=7, color=INK2, ha="right", va="bottom")
+    ax.set_xticks(range(3), groups)
+    ax.set_ylabel("test accuracy (%)")
     ax.set_ylim(0, 72)
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0)
-    ax.legend(frameon=False, ncol=3, loc="upper right", fontsize=8)
+    ax.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1.0), fontsize=7, handlelength=1, columnspacing=0.8)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "p1_accuracy.pdf"))
     fig.savefig(os.path.join(FIG, "p1_accuracy.png"), dpi=160)
@@ -56,10 +56,10 @@ def fig_accuracy():
 def fig_failures():
     runs = ["zero-shot L256", "zero-shot L512", "zero-shot L1024", "GRPO L256", "Dr.GRPO L256", "GRPO L512", "Dr.GRPO L512"]
     cats = [("correct", BLUE, ["correct"]), ("wrong value", ORANGE, ["wrong_value"]),
-            ("invalid numbers / expression", AQUA, ["bad_numbers", "bad_expression"]),
-            ("no <answer>: hit token limit", YELLOW, ["no_tag_truncated"]),
-            ("no <answer>: stopped", MAGENTA, ["no_tag_finished"])]
-    fig, ax = plt.subplots(figsize=(6.6, 3.1))
+            ("invalid numbers/expr.", AQUA, ["bad_numbers", "bad_expression"]),
+            ("no tag: hit limit", YELLOW, ["no_tag_truncated"]),
+            ("no tag: stopped", MAGENTA, ["no_tag_finished"])]
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))
     for i, r in enumerate(runs):
         left = 0.0
         for lab, col, keys in cats:
@@ -67,13 +67,14 @@ def fig_failures():
             ax.barh(i, v, left=left, height=0.62, color=col, edgecolor="white", linewidth=1.2,
                     label=lab if i == 0 else None, zorder=3)
             if v >= 6:
-                ax.text(left + v / 2, i, f"{v:.0f}", ha="center", va="center", fontsize=7.5, color=INK)
+                ax.text(left + v / 2, i, f"{v:.0f}", ha="center", va="center", fontsize=6.5, color=INK)
             left += v
     ax.set_yticks(range(len(runs)), runs)
     ax.invert_yaxis()
     ax.set_xlim(0, 100)
     ax.set_xlabel("share of test responses (%)")
-    ax.legend(frameon=False, ncol=3, fontsize=7.5, loc="upper center", bbox_to_anchor=(0.42, 1.22))
+    ax.tick_params(axis="y", labelsize=7.5)
+    ax.legend(frameon=False, ncol=3, fontsize=6.5, loc="lower center", bbox_to_anchor=(0.35, 1.0), handlelength=1, columnspacing=0.8)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "p1_failures.pdf"))
     fig.savefig(os.path.join(FIG, "p1_failures.png"), dpi=160)
