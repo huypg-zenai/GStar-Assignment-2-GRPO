@@ -2,6 +2,20 @@
 
 This project implements the **Group Relative Policy Optimization (GRPO)** algorithm to fine-tune a language model on the "Countdown" math task. The goal is to train an LLM to generate correct mathematical equations that reach a target number using a given set of integers.
 
+## Report and results
+
+**[report.pdf](./report.pdf)** covers both problems: implementation, conceptual answers, experiments and analysis
+(source and analysis scripts in [report/](./report/)).
+
+| Final test accuracy (1,024 prompts) | L256 | L512 | L1024 |
+|---|---|---|---|
+| Qwen3-1.7B zero-shot | 0.0% | 9.0% | 8.7% |
+| GRPO (80 steps) | 58.5% | 52.1% | – |
+| Dr.GRPO (80 steps) | **60.7%** | **55.9%** | – |
+
+Problem 2 (extra credit) adapts the pipeline to Leduc Hold'em poker decisions graded by an exact CFR+ solution;
+see [problem2/README.md](./problem2/README.md) and Section 4 of the report.
+
 ## Setup
 
 ```
@@ -42,4 +56,4 @@ unchanged. A T4 can't hold the starter's single-A100 setup, so the runtime diffe
 
 The other hyperparameters follow `starter.main()`. Run the notebook once with `RUN = "L256"` (which also runs
 zero-shot at L256/L512/L1024) and once with `RUN = "L512"`. Then build the combined table and plots:
-`python kaggle/report.py outputs_L256/ outputs_L512/ --save report/`.
+`python kaggle/report.py outputs_L256/ outputs_L512/ --save results/`.

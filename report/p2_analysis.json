@@ -1,0 +1,121 @@
+{
+ "equilibrium": {
+  "fold_when_facing_bet": 0.42177897091325955,
+  "bet_raise_rate": 0.39318235319530737,
+  "exploitability": 6.262571077102208e-06,
+  "best_response_value_vs_seat": [
+   -0.08559735685164438,
+   0.08560988199379858
+  ],
+  "regret_by_category": {
+   "R2 / no bet / pair": 4.0528315268909475e-07,
+   "R2 / facing bet / pair": 4.418472112983655e-06,
+   "R2 / no bet / low": 1.04655843257579e-06,
+   "R2 / facing bet / low": 1.800380246440913e-06,
+   "R1 / facing bet / J": 2.38422201590504e-06,
+   "R1 / no bet / J": 7.576438069404082e-07,
+   "R2 / no bet / high": 4.098137137497891e-06,
+   "R2 / facing bet / high": 2.9706071023547113e-06,
+   "R1 / facing bet / K": 4.742023388502024e-06,
+   "R1 / no bet / K": 1.4247576574752858e-06,
+   "R1 / facing bet / Q": 5.460049073959584e-06,
+   "R1 / no bet / Q": 2.039546316370969e-06
+  }
+ },
+ "zero-shot": {
+  "fold_when_facing_bet": 0.28603667421606493,
+  "bet_raise_rate": 0.6800241498664871,
+  "exploitability": 3.1250732421875,
+  "best_response_value_vs_seat": [
+   3.5947916666666666,
+   2.655354817708333
+  ],
+  "regret_by_category": {
+   "R2 / no bet / pair": 0.3059130777369027,
+   "R2 / facing bet / pair": 4.208684058397034,
+   "R2 / no bet / low": 0.05290371951847497,
+   "R2 / facing bet / low": 0.4717693069401584,
+   "R1 / facing bet / J": 0.03227266715650605,
+   "R1 / no bet / J": 1.4930553315079176e-06,
+   "R2 / no bet / high": 0.39038647249031827,
+   "R2 / facing bet / high": 1.0222372576944851,
+   "R1 / facing bet / K": 0.7260629291576772,
+   "R1 / no bet / K": 1.877153124467313e-06,
+   "R1 / facing bet / Q": 0.2277908484378645,
+   "R1 / no bet / Q": 9.786070306318325e-07
+  },
+  "trace_mentions": {
+   "pair": 0.3428819444444444,
+   "strong/weak hand": 0.9596354166666666,
+   "opponent's range/hand": 0.9084201388888888,
+   "pot / chips arithmetic": 0.9288194444444444,
+   "bluff": 0.012152777777777778,
+   "probability / odds": 0.1875,
+   "median_tokens": 134.5
+  }
+ },
+ "GRPO ev": {
+  "fold_when_facing_bet": 0.22285712193780513,
+  "bet_raise_rate": 0.26608222087539696,
+  "exploitability": 2.18359375,
+  "best_response_value_vs_seat": [
+   2.25,
+   2.1171875
+  ],
+  "regret_by_category": {
+   "R2 / no bet / pair": 0.006139590378780629,
+   "R2 / facing bet / pair": 0.47458964125939995,
+   "R2 / no bet / low": 0.07543960278569367,
+   "R2 / facing bet / low": 0.012322907824285955,
+   "R1 / facing bet / J": 0.0029968140843355117,
+   "R1 / no bet / J": 0.0,
+   "R2 / no bet / high": 0.06079085538263842,
+   "R2 / facing bet / high": 0.3352327053071448,
+   "R1 / facing bet / K": 0.0,
+   "R1 / no bet / K": 7.039324215841767e-07,
+   "R1 / facing bet / Q": 2.7270626891136504e-06,
+   "R1 / no bet / Q": 3.914428122600278e-06
+  },
+  "trace_mentions": {
+   "pair": 0.4622395833333333,
+   "strong/weak hand": 0.9874131944444444,
+   "opponent's range/hand": 0.6770833333333334,
+   "pot / chips arithmetic": 0.1605902777777778,
+   "bluff": 0.002170138888888889,
+   "probability / odds": 0.1306423611111111,
+   "median_tokens": 62.0
+  }
+ },
+ "GRPO outcome": {
+  "fold_when_facing_bet": 0.2069526095099546,
+  "bet_raise_rate": 0.8948954507844035,
+  "exploitability": 3.759765625,
+  "best_response_value_vs_seat": [
+   3.6703125,
+   3.84921875
+  ],
+  "regret_by_category": {
+   "R2 / no bet / pair": 0.0019824680659761393,
+   "R2 / facing bet / pair": 0.0,
+   "R2 / no bet / low": 0.011570760584979313,
+   "R2 / facing bet / low": 0.41621320672753176,
+   "R1 / facing bet / J": 9.718517928342715e-06,
+   "R1 / no bet / J": 1.5565058009782766e-06,
+   "R2 / no bet / high": 0.49827499527055963,
+   "R2 / facing bet / high": 0.9068678031232598,
+   "R1 / facing bet / K": 6.986864728900542e-06,
+   "R1 / no bet / K": 1.6425089838906857e-06,
+   "R1 / facing bet / Q": 0.04566435596918759,
+   "R1 / no bet / Q": 0.0
+  },
+  "trace_mentions": {
+   "pair": 0.1618923611111111,
+   "strong/weak hand": 0.9986979166666666,
+   "opponent's range/hand": 0.2686631944444444,
+   "pot / chips arithmetic": 0.2599826388888889,
+   "bluff": 0.00043402777777777775,
+   "probability / odds": 0.3506944444444444,
+   "median_tokens": 53.0
+  }
+ }
+}

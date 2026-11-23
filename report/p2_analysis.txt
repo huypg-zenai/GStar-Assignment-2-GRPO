@@ -1,0 +1,25 @@
+sum of reach weights = 3.978 (decisions per hand under equilibrium play)
+equilibrium   expl=0.000 BR wins vs model-as-P2/model-as-P1=-0.086/+0.086 fold|bet=0.42 bet/raise=0.39
+zero-shot     expl=3.125 BR wins vs model-as-P2/model-as-P1=+3.595/+2.655 fold|bet=0.29 bet/raise=0.68
+GRPO ev       expl=2.184 BR wins vs model-as-P2/model-as-P1=+2.250/+2.117 fold|bet=0.22 bet/raise=0.27
+GRPO outcome  expl=3.760 BR wins vs model-as-P2/model-as-P1=+3.670/+3.849 fold|bet=0.21 bet/raise=0.89
+
+Reach-weighted regret (chips) by situation; equilibrium = 0
+situation                          zero-shot       GRPO ev  GRPO outcome
+R1 / facing bet / J                    0.032         0.003         0.000
+R1 / facing bet / K                    0.726         0.000         0.000
+R1 / facing bet / Q                    0.228         0.000         0.046
+R1 / no bet / J                        0.000         0.000         0.000
+R1 / no bet / K                        0.000         0.000         0.000
+R1 / no bet / Q                        0.000         0.000         0.000
+R2 / facing bet / high                 1.022         0.335         0.907
+R2 / facing bet / low                  0.472         0.012         0.416
+R2 / facing bet / pair                 4.209         0.475         0.000
+R2 / no bet / high                     0.390         0.061         0.498
+R2 / no bet / low                      0.053         0.075         0.012
+R2 / no bet / pair                     0.306         0.006         0.002
+
+Reasoning traces (share of responses mentioning ...)
+zero-shot     pair=0.34 strong/weak hand=0.96 opponent's range/hand=0.91 pot / chips arithmetic=0.93 bluff=0.01 probability / odds=0.19 median_tokens=134.50
+GRPO ev       pair=0.46 strong/weak hand=0.99 opponent's range/hand=0.68 pot / chips arithmetic=0.16 bluff=0.00 probability / odds=0.13 median_tokens=62.00
+GRPO outcome  pair=0.16 strong/weak hand=1.00 opponent's range/hand=0.27 pot / chips arithmetic=0.26 bluff=0.00 probability / odds=0.35 median_tokens=53.00

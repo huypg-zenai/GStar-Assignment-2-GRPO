@@ -1,0 +1,441 @@
+\documentclass[10.5pt]{article}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{float}
+\setlist{itemsep=2pt,topsep=3pt}
+\captionsetup{font=small,labelfont=bf}
+\definecolor{boxbg}{HTML}{EEF2FB}
+\newcommand{\code}[1]{\texttt{#1}}
+\hypersetup{pdftitle={GStar Assignment 2: GRPO},pdfauthor={Phung Gia Huy}}
+
+\title{\textbf{GStar Assignment 2: GRPO}\\[2pt]\large Countdown with GRPO / Dr.GRPO, and an extra-credit study on poker}
+\author{Phung Gia Huy}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+\vspace{-6pt}
+\begin{center}\small
+Code: \url{https://github.com/huypg-zenai/GStar-Assignment-2-GRPO} \quad
+Runs: W\&B project \code{gstar-a2-grpo}
+\end{center}
+
+\paragraph{Summary.}
+All four RL runs beat the course target of 37\% (zero-shot at $L_{1024}$): GRPO reaches 58.5\% ($L_{256}$) and
+52.1\% ($L_{512}$); Dr.GRPO reaches \textbf{60.7\%} and \textbf{55.9\%}. The failure analysis finds two things the
+accuracy number hides: (i) RL learned to exploit the verifier, which accepts equations that leave numbers
+unused (13--17\% of the ``correct'' $L_{256}$ answers); with the stricter rule the runs still score 48--55\%; and
+(ii) GRPO and Dr.GRPO fail in different ways (GRPO commits to wrong answers, Dr.GRPO runs out of tokens), which
+we trace to GRPO's std normalisation amplifying the 0.1 partial-credit reward. For Problem 2 we adapt the same
+pipeline to decisions in Leduc Hold'em poker, where an exact game solution grades every answer. With an exact reward,
+RL cuts exploitability by 30\% and generalises to held-out situations; with a noisy ``play the hand out'' reward
+the same compute first improves and then degrades, ending worse than zero-shot.
+
+\section{Implementation (Tasks 1--5)}
+All functions are in \code{starter.py}; \code{tests/test\_tasks.py} checks every example from the handout plus edge
+cases (20 CPU tests, including Problem 2's, pass).
+\begin{itemize}
+\item \textbf{Task 1.} \code{\_extract\_answer} returns the stripped content of the \emph{last}
+  \code{<answer>...</answer>} (multi-line allowed). \code{\_validate\_numbers} checks that the numbers in the equation
+  form a sub-multiset of the available numbers (each used at most once), as specified. \code{\_evaluate\_equation}
+  accepts only digits, whitespace, \code{+ - * / ( )}, rejects \code{**} and \code{//}, and returns \code{None} on any
+  evaluation error (implicit multiplication, division by zero, Unicode operators).
+\item \textbf{Task 2.} \code{reward\_fn}: no tag $\to 0$; tag but invalid numbers, invalid expression or wrong value
+  $\to 0.1$; correct value $\to 1.0$ (tolerance $10^{-5}$).
+\item \textbf{Task 3.} Rewards are reshaped to \code{[n\_prompts, G]}; advantages are $r-\bar r$, divided by
+  $\mathrm{std}+\epsilon$ for GRPO and not divided for Dr.GRPO; metadata holds mean/std/max/min.
+\item \textbf{Task 4.} Per-token PPO loss $-\min(A\,\rho_t,\;A\,\mathrm{clip}(\rho_t,1-\epsilon,1+\epsilon))$ with
+  $\rho_t=\exp(\log\pi_\theta-\log\pi_{\theta_\text{old}})$.
+\item \textbf{Task 5.} \code{masked\_mean}: per-sequence mean over response tokens, then batch mean.
+  \code{masked\_mean\_drgrpo}: per-sequence masked \emph{sum} divided by the constant \code{num\_tokens}
+  (= max generation length), then batch mean.
+\end{itemize}
+
+\paragraph{Training setup (Kaggle, 2$\times$T4).} The handout assumes an A100; we ran on Kaggle's free
+2$\times$T4 GPUs, which forced three changes. (1) \textbf{fp16}: T4s have no bf16, so the policy trains in fp16 with
+a gradient scaler and vLLM generates in fp16. (2) \textbf{LoRA} ($r=32$, $\alpha=32$, all linear layers) instead of full
+fine-tuning, to fit the policy, optimiser state and activations on one 16\,GB GPU. (3) \textbf{vLLM on the second GPU};
+after every optimiser step the merged LoRA weights are loaded into vLLM and its prefix cache is reset. A check on
+every step compares vLLM's log-probabilities of the sampled tokens with the policy's; the mean gap stayed at
+0.001--0.005 nats/token in all runs, so rollouts really come from the current policy.
+Hyper-parameters (all runs): 80 GRPO steps; 128 rollouts per step (16 prompts $\times$ group size 8); 32 gradient-accumulation
+micro-batches; AdamW, lr $5\times10^{-5}$, no warm-up; clip $\epsilon=0.2$; gradient-norm clip 1.0; sampling
+temperature 1.0. Evaluation uses the 1,024 test prompts with the course's prompt and scoring, every 10 steps.
+Wall-clock: about 1.7\,h per $L_{256}$ run and 3.2\,h per $L_{512}$ run.
+
+\section{Conceptual questions}
+
+\subsection*{Clipping and policy regime}
+\textbf{1. Clipping matters for off-policy updates.} The clip acts only when the ratio
+$\rho_t=\pi_\theta/\pi_{\theta_\text{old}}$ leaves $[1-\epsilon,1+\epsilon]$ in the direction the advantage pushes. In a
+purely on-policy update the rollouts come from the very parameters being differentiated, so $\rho_t=1$ for every token
+and both terms of the $\min$ are equal: the loss reduces to the plain policy gradient $-A\log\pi$ (up to a constant) and
+the clip is inactive. This is exactly our setup: \code{starter.py} sets \code{old\_log\_probs = policy\_log\_probs.detach()}
+and takes one optimiser step per rollout batch, so the clip fraction is zero by construction. The ratio only moves
+away from 1 when data is reused after the policy has changed (several epochs or optimiser steps per batch, stale or
+asynchronous rollouts, or a generator that differs from the trainer). Then large ratios would let a single
+high-advantage token move the policy far from where the data was collected, where the advantage estimate is no longer
+valid; clipping stops this. (The small vLLM-vs-policy mismatch of 0.001--0.005 nats is the only off-policyness in our
+runs; it is not corrected by any importance ratio.)
+
+\textbf{2. On-policy vs off-policy for GRPO on Countdown.}
+\begin{itemize}
+\item \emph{On-policy, advantage 1 -- an unbiased, simple estimator.} Samples come from the current policy, so the
+  gradient needs no importance weights and the clip never biases it. There is no $\epsilon$ to tune.
+\item \emph{On-policy, advantage 2 -- feedback on current behaviour.} The group baseline and the reward reflect what
+  the model does \emph{now} (for example its current length and format habits). This matters here because behaviour
+  shifts quickly: at $L_{256}$ the average response length falls by about a third within 30 steps.
+\item \emph{Off-policy, advantage 1 -- sample efficiency.} Generation is expensive (15--33\,s per step on our GPUs).
+  Reusing each rollout batch for several optimiser steps, as PPO does, gets more learning out of every generated token.
+  Rare successes are especially valuable early on: at $L_{256}$, 86--89\% of groups in the first 10 steps had no
+  reward variation at all.
+\item \emph{Off-policy, advantage 2 -- decoupled generation and training.} With two GPUs, the generator can produce
+  the next batch with slightly stale weights while the trainer updates, instead of each GPU waiting for the other.
+  This raises throughput, at the price of off-policy data that clipping must then control.
+\end{itemize}
+
+\subsection*{Per-token gradients under the two reductions}
+\textbf{1. Experiment.} We ran the batch from the handout through our \code{compute\_loss} and both reductions and called
+\code{backward()} (\code{report/grad\_reductions.py}; ratio 1, the same advantage $A$ for both responses, batch size $B=2$,
+\code{num\_tokens} = 6). Gradients with respect to each token's log-prob (which equals the gradient with respect to the ratio at $\rho=1$):
+
+\begin{center}\small
+\begin{tabular}{lccc}
+\toprule
+Reduction & each short-response token & each long-response token & total per response (short / long)\\
+\midrule
+\code{masked\_mean} & $-A/(B\cdot3) = -0.167A$ & $-A/(B\cdot6)=-0.083A$ & $-0.5A$ / $-0.5A$\\
+\code{masked\_mean\_drgrpo} & $-A/(B\cdot6)=-0.083A$ & $-A/(B\cdot6)=-0.083A$ & $-0.25A$ / $-0.5A$\\
+\bottomrule
+\end{tabular}
+\end{center}
+Masked tokens get zero gradient in both cases. \textbf{Observation:} \code{masked\_mean} gives each \emph{response} equal
+weight, so each token of the short response gets twice the gradient of a long-response token. \code{masked\_mean\_drgrpo}
+gives each \emph{token} equal weight, so a response's total weight grows with its length. With $A<0$ the signs flip:
+under \code{masked\_mean} a long wrong response is penalised less per token than a short wrong one. This is the length
+bias of Fig.~2 in the handout: it makes wrong answers drift longer and correct answers shorter.
+
+\textbf{2. When to prefer each.}
+\begin{itemize}
+\item \emph{\code{masked\_mean} preferable:} when lengths vary a lot and every \emph{sample} should count equally, for
+  example a batch mixing short direct answers with a few very long truncated rollouts. With constant normalisation the
+  long ones would dominate the gradient, and the update size would swing with the batch's total length.
+  Length-normalisation keeps the step size stable and, for correct answers, mildly rewards brevity, which helps under a
+  tight budget such as $L_{256}$.
+\item \emph{\code{masked\_mean\_drgrpo} preferable:} for long chain-of-thought tasks where the per-token objective should
+  be unbiased. Under \code{masked\_mean}, incorrect answers become longer because their per-token penalty shrinks with
+  length; Dr.GRPO removes that incentive. Our $L_{512}$ runs match this: Dr.GRPO ends with shorter outputs than GRPO
+  (356 vs 374 tokens) and higher accuracy (55.9\% vs 52.1\%).
+\end{itemize}
+
+\section{Problem 1: experiments}
+\subsection{Zero-shot baseline}
+We ran the course's zero-shot protocol (same prompt, sampling and scoring as \code{zero\_shot\_eval.py}) on 1,024 test
+prompts. We get 0.0\% / 9.0\% / 8.7\% at $L_{256}/L_{512}/L_{1024}$, against the handout's 0.1\% / 15\% / 37\%.
+The step-0 evaluations inside the training runs agree with our numbers (0.1\% and 7.6\%). The model is the same:
+Qwen3-1.7B's weights have not changed since release, and both chat-template revisions render our prompt identically.
+Fig.~\ref{fig:failures} shows why accuracy is low: at $L_{1024}$, 63\% of answers hit the token limit (many in
+repetition loops such as ``45. 45. 45.~\ldots'') and 22\% stop without an \code{<answer>} tag (using \code{\textbackslash boxed\{\}}
+or plain text). Even if every untruncated answer were correct, the ceiling would be 37\%. Our main suspect for the gap
+is numerical precision: T4s force fp16 instead of bf16, which plausibly makes long samples degenerate into loops more
+often. We could not test this without bf16 hardware, so the cause is not established. The RL comparison is unaffected:
+every run, including its baseline, uses the same precision.
+
+\subsection{Main results}
+\begin{table}[H]
+\centering\small
+\begin{tabular}{llcccccc}
+\toprule
+Model & Max tokens & Accuracy & Strict acc.$^\dagger$ & Correct / partial / failed & Avg tokens & Best eval (step)\\
+\midrule
+Zero-shot & $L_{256}$ & 0.0\% & 0.0\% & 0 / 0 / 1024 & 256 & --\\
+Zero-shot & $L_{512}$ & 9.0\% & 9.0\% & 92 / 21 / 911 & 498 & --\\
+Zero-shot & $L_{1024}$ & 8.7\% & 8.7\% & 89 / 60 / 875 & 888 & --\\
+\midrule
+GRPO & $L_{256}$ & 58.5\% & 48.4\% & 599 / 310 / 115 & 139 & 58.5\% (80)\\
+Dr.GRPO & $L_{256}$ & \textbf{60.7\%} & \textbf{52.9\%} & 622 / 36 / 366 & 161 & 61.1\% (70)\\
+GRPO & $L_{512}$ & 52.1\% & 51.9\% & 533 / 10 / 481 & 374 & 52.1\% (70)\\
+Dr.GRPO & $L_{512}$ & \textbf{55.9\%} & \textbf{55.3\%} & 572 / 10 / 442 & 356 & 55.9\% (80)\\
+\bottomrule
+\end{tabular}
+\caption{Final accuracy on the 1,024 test prompts after 80 steps. Partial = reward 0.1 (tag present but wrong);
+failed = reward 0 (no tag). $^\dagger$Strict: correct \emph{and} using every given number, as the task statement requires
+(see the analysis).}
+\label{tab:p1}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/p1_accuracy.pdf}
+\caption{Final accuracy. All four RL runs beat the course's zero-shot $L_{1024}$ reference (dashed); Dr.GRPO beats GRPO at both lengths.}
+\label{fig:acc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{figures/p1_curves.png}
+\caption{Training curves. Left: test accuracy every 10 steps. Middle: mean training reward. Right: mean output length.
+$L_{256}$ starts from zero (every answer is truncated) and needs about 20 steps to learn to finish; $L_{512}$ starts at 7.6\%
+and jumps to 40\% within 10 steps. No run became unstable within 80 steps.}
+\label{fig:curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{figures/p1_failures.pdf}
+\caption{What every test response ends as, computed with the same verifier functions as the reward
+(\code{report/analyze\_p1.py}).}
+\label{fig:failures}
+\end{figure}
+
+\subsection{Analysis}
+\paragraph{What worked.}
+\begin{itemize}
+\item \textbf{Finishing within the budget is most of the gain.} Zero-shot Qwen3 thinks at length and is cut off: 100\%
+  of answers at $L_{256}$, 85\% at $L_{512}$. RL makes it budget-aware. At $L_{256}$, output length falls from 256 to
+  139--161 tokens and truncation from 100\% to 11--36\%. Correct answers at $L_{256}$ are short trial-and-error searches,
+  for example ``79 $-$ 60 = 19, 17 + 19 = 36! \code{<answer>17 + (79 - 60)</answer>}''.
+\item \textbf{Easy instances are largely solved.} Accuracy on 3-number problems is 79--84\% in every run, against
+  27--40\% on 4-number problems. The learned search pairs numbers greedily and rarely builds the nested expressions
+  that 4-number targets often need.
+\item \textbf{Dr.GRPO $>$ GRPO at both lengths} (+2.2 and +3.8 points), and its curves are still rising at step 80 at
+  $L_{512}$. The training was stable throughout.
+\end{itemize}
+
+\paragraph{What failed, and why.}
+\begin{itemize}
+\item \textbf{Reward hacking through the verifier.} The task says every number must be used exactly once, but
+  \code{\_validate\_numbers} (as the handout specifies it) only checks that the numbers used form a \emph{subset}. RL found
+  this. 103 of GRPO-$L_{256}$'s 599 correct answers (17\%) and 80 of Dr.GRPO-$L_{256}$'s 622 (13\%) leave numbers unused,
+  for example \code{55 + 38} for target 93 with numbers [55, 38, 69, 68]. Zero-shot does this 0 times, and the $L_{512}$
+  runs only 2--6 times. Short budgets push the model to the cheapest equation that hits the target. Under the strict
+  rule, accuracy falls to 48.4\% / 52.9\% (GRPO / Dr.GRPO, $L_{256}$) and 51.9\% / 55.3\% ($L_{512}$): still above
+  37\%, but the ranking of the two lengths flips. Strictly, $L_{512}$ beats $L_{256}$ for both methods.
+\item \textbf{GRPO commits to wrong answers; Dr.GRPO runs out of tokens} ($L_{256}$). 26\% of GRPO's answers are
+  well-formed but wrong, against 3\% for Dr.GRPO, and GRPO truncates 11\% against Dr.GRPO's 36\%. GRPO also learned an
+  empty \code{<think></think>} block (1,022 of 1,024 answers) and moved its scratch work outside it, while Dr.GRPO opens
+  \code{<think>} on every answer and reasons inside it (never closing it before the answer). Our hypothesis is that \emph{std normalisation amplifies the 0.1 partial credit.} In a group
+  with no correct answer, rewards are a mix of 0 (truncated) and 0.1 (any tagged answer). GRPO divides by their small
+  std, so ``write \emph{some} answer before the limit'' gets advantages of about $\pm1$, as large as for solving the
+  problem. Dr.GRPO leaves this difference at $\le 0.1$, so finishing is rewarded much less than being right. The result
+  is a model that guesses rather than one that keeps searching. The 310 vs 36 ``partial'' counts in Table~\ref{tab:p1}
+  are this effect.
+\item \textbf{$L_{512}$ still truncates 40--42\%} and stops without a tag 3--5\% of the time. It almost never gives a
+  wrong value (0--2 answers), so when it answers it is right. Its remaining problem is finishing. The $L_{256}$ limit
+  forces conciseness quickly because every truncation scores 0. At $L_{512}$ most answers already finish, so 80 steps
+  compress the reasoning less (498 $\to$ 356--374 tokens).
+\end{itemize}
+
+\paragraph{What we would change next.}
+\begin{enumerate}
+\item \textbf{Fix the verifier}: require the multiset of numbers used to equal the given multiset. This removes the
+  subset exploit; our strict-accuracy numbers estimate what this costs.
+\item \textbf{Rethink the 0.1 partial credit.} It is useful early (it teaches the tag) but later rewards guessing,
+  especially with std normalisation. Options: drop it after format is learned (a curriculum), or give it only for
+  attempts that use all numbers.
+\item \textbf{Filter zero-variance groups} (DAPO-style dynamic sampling). 38--68\% of groups in the last 10 steps had
+  identical rewards and contributed no gradient.
+\item \textbf{A length-aware penalty instead of hard truncation at $L_{512}$} (a soft overlong penalty), or a
+  curriculum from $L_{256}$ to $L_{512}$, to keep the concision learned at $L_{256}$ while allowing longer searches
+  for 4-number problems.
+\item \textbf{bf16 hardware}, to test the fp16 explanation of the zero-shot gap and of looping truncations.
+\end{enumerate}
+
+\section{Problem 2 (extra credit): teaching a small LLM to reason about poker}
+\subsection{Research question and design}
+Countdown has one right answer per prompt. Many real decisions do not: the right action depends on hidden information
+and on what other agents do. We ask: \textbf{can GRPO teach Qwen3-1.7B to reason in such a setting, and how much does the
+design of the reward matter when the environment's own feedback is noisy?}
+
+\paragraph{Testbed: Leduc Hold'em.} A standard game-theory benchmark: a 6-card deck (J J Q Q K K), one private card per
+player, one public card, and two betting rounds. It keeps the essence of poker (hidden information, bluffing, pot odds)
+but has only 288 decision points (information sets). That lets us solve it exactly with CFR+ and compute the exact
+\textbf{exploitability} of any strategy: how many chips per hand a perfect adversary wins against it, with 0 meaning
+equilibrium. Our engine reproduces OpenSpiel's \code{leduc\_poker} exactly: exploitability of uniform, always-call and
+always-raise play matches to 6 decimals, and our CFR+ solution (20k iterations) has exploitability $6\cdot10^{-6}$ and
+the game's known value $-0.0856$ for player 1.
+
+\paragraph{Formulation.} One prompt is one decision. It states the rules, the player's card, the public card if revealed,
+the betting so far, the pot and the legal actions, in plain English. The model reasons briefly and answers with one
+action word in \code{<answer>} tags. The opponent is assumed to play the equilibrium strategy $\sigma^*$. The task is the
+only change: the GRPO code (\code{starter.py}), the GPU runner and all hyper-parameters are those of Problem 1 ($L_{512}$, 80 steps).
+
+\paragraph{Training data.} Situations are sampled half from equilibrium self-play (how often they occur in real play)
+and half uniformly over all information sets (to cover rare ones). \textbf{90 of the 288 information sets are held
+out}: the round-2 situations with (private, public) card pairs (J,K), (Q,J), (K,Q). They are never trained on and test
+generalisation. No dataset is needed, because situations are generated from the game.
+
+\paragraph{Two reward functions (the experimental variable).} A missing tag or illegal action scores 0, and a legal
+action scores $0.1 + 0.9\cdot\text{score}$, mirroring Problem 1's format credit.
+\begin{itemize}
+\item \code{ev} (exact): score $=(Q^*(I,a)-\min_b Q^*(I,b))/(\max_b Q^*-\min_b Q^*)$. $Q^*$ is the expected chips of
+  action $a$ when both players then follow $\sigma^*$, with the hidden card weighted by the equilibrium belief.
+\item \code{outcome} (realistic): score $=(\text{chips won}+13)/26$ from \textbf{one} simulated hand: deal the hidden card
+  from the belief, play $a$, then follow $\sigma^*$ to the end. This is an unbiased Monte Carlo estimate of the \code{ev}
+  score but noisy (standard deviation about 4 chips, against action-value gaps of 1--3 chips). The two arms differ only
+  in variance.
+\end{itemize}
+
+\paragraph{Hypotheses (written before the runs).}
+\textbf{H1}: RL learns strategy, not just format. Exploitability and regret fall well below zero-shot, and the gains
+carry over to held-out situations.
+\textbf{H2}: reward noise matters. With the same compute, \code{outcome} learns more slowly and ends more exploitable than \code{ev}.
+\textbf{H3}: exploitative collapse. Both rewards score a decision against a \emph{fixed} opponent, so any best response to
+$\sigma^*$ earns full reward, and where $\sigma^*$ mixes several actions score the same. We expect the policy to become
+nearly deterministic, so high reward would not mean equilibrium play.
+
+\paragraph{Evaluation.} At every evaluation the model answers $k$ times at \emph{all} 288 information sets ($k=2$ during
+training, $k=8$ for zero-shot and the final model). The answer frequencies form a stochastic policy, with invalid
+answers replaced by fold or check, and that policy is scored \textbf{exactly}, with no sampled games. Metrics:
+exploitability (the main one); chips per hand against the equilibrium and against fixed bots (averaged over both seats);
+EV reward and regret per decision on seen vs held-out situations; entropy at information sets where $\sigma^*$ mixes;
+valid-answer rate and length. Baselines: the equilibrium (0), uniform random (2.37), always check/call (1.47),
+always bet/raise (2.37) and zero-shot Qwen3.
+
+\subsection{Pilot: the prompt must give GRPO a signal}
+Our first full run used Qwen3's built-in thinking mode with reasoning in \code{<think>} tags. The model wrote long
+analyses that often looped, and at step 0 every rollout hit the 512-token limit. Every reward was 0, every group was
+identical and the gradient was exactly 0. We stopped it after 17 steps and compared prompts:
+
+\begin{center}\small\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Prompt (Qwen3-1.7B, fp16, temperature 1) & Valid answers & Hit the limit & Avg tokens & Groups with signal\\
+\midrule
+Thinking mode, max 512 (288 situations $\times$ 8) & 0.04\% & 99.96\% & 512 & 0\%\\
+Thinking mode, max 1,024 (288 $\times$ 8) & 0.3\% & 76\% & 858 & --\\
+Thinking off, same instruction (16 $\times$ 4) & 45\% & 53\% & 326 & 15/16\\
+\textbf{Thinking off + ``think briefly (a few sentences)''} (16 $\times$ 4) & \textbf{94\%} & \textbf{0\%} & \textbf{146} & \textbf{11/16}\\
+\bottomrule
+\end{tabular}}
+\end{center}
+All reported runs use the last prompt; the full zero-shot evaluation confirms it (95.8\% valid, 0\% truncated). The
+training script now stops if fewer than 5\% of step-0 answers are valid, so a run without learning signal cannot use up a session.
+
+\subsection{Results}
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lcccccccc}
+\toprule
+Policy & Expl.\,$\downarrow$ & vs eq. & vs raise-bot & EV reward & seen & held-out & Regret\,$\downarrow$ & Tokens\\
+\midrule
+Equilibrium (CFR+) & 0 & 0 & -- & 1 & 1 & 1 & 0 & --\\
+Always check/call & 1.467 & $-0.633$ & -- & -- & -- & -- & -- & --\\
+Uniform random & 2.374 & $-0.699$ & -- & -- & -- & -- & -- & --\\
+Always bet/raise & 2.367 & $-0.335$ & -- & -- & -- & -- & -- & --\\
+\midrule
+Zero-shot Qwen3-1.7B & 3.125 & $-0.556$ & $-1.53$ & 0.641 & 0.652 & 0.617 & 1.553 & 140\\
+GRPO, \code{ev} reward & \textbf{2.184} & $-0.151$ & $-0.78$ & \textbf{0.860} & \textbf{0.882} & \textbf{0.811} & \textbf{0.291} & 64\\
+GRPO, \code{outcome} reward & 3.760 & $-0.150$ & $-2.29$ & 0.756 & 0.801 & 0.657 & 0.388 & 54\\
+\bottomrule
+\end{tabular}
+\caption{Problem 2, final models ($k=8$ samples per information set). Exploitability and ``vs'' columns are chips per
+hand; regret is chips per decision, against $Q^*$. Valid answers are 95.8\% for zero-shot and 99.9\% for both trained models.}
+\label{tab:p2}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{figures/p2_curves.png}
+\caption{Problem 2 training. (1) Exploitability, (2) EV reward on seen (solid) vs held-out (dashed) situations,
+(3) training reward (faint) vs the true EV of the chosen actions, (4) output length. Evaluations at steps 0--70 use only
+$k=2$ samples per information set and are noisy; step 80 uses $k=8$.}
+\label{fig:p2}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+ & Equilibrium & Zero-shot & GRPO \code{ev} & GRPO \code{outcome}\\
+\midrule
+P(fold $\mid$ facing a bet) & 0.42 & 0.29 & 0.22 & 0.21\\
+P(bet or raise $\mid$ allowed) & 0.39 & 0.68 & 0.27 & 0.89\\
+Adversary's win vs model as P1 / P2 (chips/hand) & $+0.09$ / $-0.09$ & 2.66 / 3.60 & 2.12 / 2.25 & 3.85 / 3.67\\
+\midrule
+Regret (chips): round 2, facing bet, pair & 0 & 4.21 & 0.48 & 0.00\\
+Regret: round 2, facing bet, high card & 0 & 1.02 & 0.34 & 0.91\\
+Regret: round 2, facing bet, low card & 0 & 0.47 & 0.01 & 0.42\\
+Regret: round 2, no bet, high card & 0 & 0.39 & 0.06 & 0.50\\
+Regret: round 1, facing bet, K & 0 & 0.73 & 0.00 & 0.00\\
+\midrule
+Traces mentioning the opponent's likely hand & -- & 91\% & 68\% & 27\%\\
+Traces with pot / chip arithmetic & -- & 93\% & 16\% & 26\%\\
+\bottomrule
+\end{tabular}
+\caption{Playing style and where the losses are. Frequencies and regrets are weighted by how often each situation
+occurs under equilibrium play (\code{report/analyze\_p2.py}).}
+\label{tab:style}
+\end{table}
+
+\subsection{Analysis}
+\paragraph{H1 is supported with the exact reward.} The \code{ev} run cuts exploitability by 30\% (3.13 $\to$ 2.18),
+regret by 81\% (1.55 $\to$ 0.29 chips per decision) and its deficit against the equilibrium from $-0.56$ to $-0.15$
+chips per hand. It generalises: held-out EV rises from 0.617 to 0.811, almost as much as seen EV (0.652 $\to$ 0.882),
+although those 90 situations never appeared in training. The model learned the right concepts, not memorised spots:
+for example, facing a bet with a pair it now always calls, where zero-shot folded up to 60\% of the time (regret
+4.21 $\to$ 0.48). The remaining regret there is that it never \emph{raises} a pair, which the equilibrium often does.
+
+\paragraph{H2 is supported, more strongly than expected.} With identical compute, the noisy reward improves until about
+step 40 (exploitability 1.27 at $k=2$; held-out EV 0.82) and then degrades. It ends \emph{more} exploitable than zero-shot
+(3.76), with held-out EV back to 0.657, and loses 2.29 chips per hand to an always-raise bot. Panel 3 of Fig.~\ref{fig:p2}
+shows the reason: the reward the model is trained on stays flat at about 0.55--0.60 while the true EV of its actions
+moves underneath. The signal-to-noise ratio is low (chip outcomes have standard deviation of about 4 against value gaps of 1--3),
+so with 80 steps $\times$ 16 situations the updates follow noise as much as signal. The policy drifted into a hyper-aggressive
+style (bets or raises 89\% of the time against the equilibrium's 39\%). We do not have a confirmed mechanism for the
+direction of the drift. One hypothesis is that rare large wins from raising produce large positive advantages that a few
+samples per situation do not average out; more samples per situation, or Dr.GRPO without std scaling, would test it.
+
+\paragraph{H3 is supported: reward is not the objective.} In the \code{ev} run, entropy at the 96 information sets where
+$\sigma^*$ mixes collapses from 0.64 to 0.06, so the policy stops bluffing and mixing. Exploitability is lowest at step 20
+(1.68) and then rises to about 2.2, while the EV reward keeps climbing (0.73 $\to$ 0.86). The final policy is a
+\emph{calling station}: it rarely folds (22\% vs 42\%) and rarely bets (27\% vs 39\%). Against the fixed equilibrium
+opponent this earns high reward, but a best-responding adversary exploits it by value-betting, so it ends worse than the
+trivial always-call bot (1.47). Late in training 75\% of groups had identical rewards: once the policy is deterministic,
+GRPO's learning signal disappears. This is the classic gap between optimising against a fixed opponent and reaching an
+equilibrium.
+
+\paragraph{What the reasoning looks like.} Training shortens the reasoning (140 $\to$ 54--64 tokens) and changes its
+content. Zero-shot traces mention the opponent's likely hand (91\%) and pot arithmetic (93\%), often wrongly. The trained
+models reason with a compact hand-strength rule: ``Your private card is Q, public card is J, so you have a weak hand. Opponent
+likely has a strong hand. \code{<answer>fold</answer>}''. Opponent modelling falls to 68\% (\code{ev}) and 27\% (\code{outcome})
+of traces, and chip arithmetic to 16--26\%. RL kept the reasoning that predicts reward and dropped the rest. It did not
+collapse to bare answers, unlike Problem 1's GRPO-$L_{256}$ run with its empty \code{<think>}.
+
+\paragraph{Limitations.} One seed per arm; periodic evaluations use $k=2$ and are noisy (only the $k=8$ endpoints are
+reliable); 80 steps; the held-out split covers only round-2 card pairs; the opponent is always $\sigma^*$; the pilot
+prompt comparison used 64 samples.
+
+\subsection{Other formulations this setup supports}
+The engine, the exact grader and the training script make several variants cheap to run. Each tests a different question:
+\begin{center}\small
+\begin{tabular}{p{3.4cm}p{6.1cm}p{5.6cm}}
+\toprule
+Formulation & What changes & What it tests\\
+\midrule
+Self-play reward & Score $Q$ against the model's \emph{current} policy, recomputed every few steps & Whether moving the target removes H3's collapse and pushes towards equilibrium\\
+Distribution-matching reward & Reward the group's action \emph{frequencies} for matching $\sigma^*$ (a group-level reward) & Whether GRPO can learn to mix, i.e.\ to bluff at the right rate\\
+Exploitation & Score against a weak fixed bot (e.g.\ always-call) & Whether the model can learn to exploit a known style, and how fast\\
+Full-hand, multi-turn RL & The model plays whole hands and gets one reward at the end & Credit assignment across several decisions, closer to agentic RL\\
+Variance reduction for \code{outcome} & Average $n$ simulated hands, or subtract a learned baseline & How much of H2's gap each unit of noise reduction recovers\\
+Transfer & Train on Leduc, test on Kuhn poker or a larger deck & Whether the learned reasoning is general or specific to Leduc\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Reproducibility}
+\small
+Kaggle notebooks: \code{kaggle/problem1\_kaggle.ipynb} (\code{LOSS\_TYPE} = \code{grpo} / \code{dr\_grpo}; one length per session)
+and \code{kaggle/problem2\_leduc\_kaggle.ipynb} (\code{REWARD} = \code{ev} / \code{outcome}). Both run on Kaggle 2$\times$T4 in a Python 3.12 venv
+with vLLM 0.8.5. Problem 2 code: \code{problem2/} (\code{leduc.py}, \code{grpo\_leduc.py}, \code{report\_leduc.py}); design
+notes in \code{problem2/README.md}. Report analyses: \code{report/analyze\_p1.py}, \code{report/analyze\_p2.py},
+\code{report/grad\_reductions.py}, \code{report/make\_figures.py}. Tests: \code{python -m pytest tests}. GPU time:
+about 11\,h for Problem 1 (four training runs and zero-shot) and 3.5\,h for Problem 2 (plus the stopped pilot run
+and smoke tests), on free Kaggle T4s.
+\end{document}

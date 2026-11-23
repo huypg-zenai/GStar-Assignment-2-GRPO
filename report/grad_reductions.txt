@@ -1,0 +1,20 @@
+
+=== advantage A = +1 for both responses (ratio = 1) ===
+masked_mean          loss=-1.0000
+   short response tokens: [-0.1667, -0.1667, -0.1667]  (masked: [-0.0, -0.0, -0.0])
+   long  response tokens: [-0.0833, -0.0833, -0.0833, -0.0833, -0.0833, -0.0833]
+   per-token ratio short/long = 2.00; total gradient mass short = -0.5000, long = -0.5000
+masked_mean_drgrpo   loss=-0.7500
+   short response tokens: [-0.0833, -0.0833, -0.0833]  (masked: [-0.0, -0.0, -0.0])
+   long  response tokens: [-0.0833, -0.0833, -0.0833, -0.0833, -0.0833, -0.0833]
+   per-token ratio short/long = 1.00; total gradient mass short = -0.2500, long = -0.5000
+
+=== advantage A = -1 for both responses (ratio = 1) ===
+masked_mean          loss=+1.0000
+   short response tokens: [0.1667, 0.1667, 0.1667]  (masked: [0.0, 0.0, 0.0])
+   long  response tokens: [0.0833, 0.0833, 0.0833, 0.0833, 0.0833, 0.0833]
+   per-token ratio short/long = 2.00; total gradient mass short = +0.5000, long = +0.5000
+masked_mean_drgrpo   loss=+0.7500
+   short response tokens: [0.0833, 0.0833, 0.0833]  (masked: [0.0, 0.0, 0.0])
+   long  response tokens: [0.0833, 0.0833, 0.0833, 0.0833, 0.0833, 0.0833]
+   per-token ratio short/long = 1.00; total gradient mass short = +0.2500, long = +0.5000
