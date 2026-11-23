@@ -4,8 +4,9 @@ This project implements the **Group Relative Policy Optimization (GRPO)** algori
 
 ## Report and results
 
-**[report.pdf](./report.pdf)** covers both problems: implementation, conceptual answers, experiments and analysis
-(source and analysis scripts in [report/](./report/)).
+Reports: **[Problem1_Report.pdf](./Problem1_Report.pdf)** (approach, reward design, evaluation, results, analysis,
+conceptual questions) and **[Problem2_Report.pdf](./Problem2_Report.pdf)** (extra credit). LaTeX sources and analysis
+scripts are in [report/](./report/).
 
 | Final test accuracy (1,024 prompts) | L256 | L512 | L1024 |
 |---|---|---|---|
@@ -14,7 +15,7 @@ This project implements the **Group Relative Policy Optimization (GRPO)** algori
 | Dr.GRPO (80 steps) | **60.7%** | **55.9%** | – |
 
 Problem 2 (extra credit) adapts the pipeline to Leduc Hold'em poker decisions graded by an exact CFR+ solution;
-see [problem2/README.md](./problem2/README.md) and Section 4 of the report.
+see [problem2/README.md](./problem2/README.md) and the Problem 2 report.
 
 ## Setup
 

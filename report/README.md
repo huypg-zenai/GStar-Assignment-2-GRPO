@@ -1,6 +1,7 @@
 # Report sources
 
-`report.tex` → `../report.pdf` (build: `tectonic -X compile report.tex && cp report.pdf ..`).
+`problem1.tex` → `../Problem1_Report.pdf`, `problem2.tex` → `../Problem2_Report.pdf` (shared `preamble.tex`;
+build with `tectonic -X compile problem1.tex` and copy the PDF up).
 
 Numbers and figures are regenerated from the downloaded Kaggle outputs (`outputs_L256/`, `outputs_L512/`,
 `outputs_L256_dr/`, `outputs_L512_dr/`, `outputs_p2_ev/`, `outputs_p2_outcome/` in one folder, e.g. `~/Downloads`):
